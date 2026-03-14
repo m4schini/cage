@@ -1,0 +1,76 @@
+package init
+
+import (
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+)
+
+func newItemDelegate(keys *delegateKeyMap, styles *styles, onSelected func(i item)) list.DefaultDelegate {
+	d := list.NewDefaultDelegate()
+
+	d.UpdateFunc = func(msg tea.Msg, m *list.Model) tea.Cmd {
+		var title string
+		var selected item
+
+		if i, ok := m.SelectedItem().(item); ok {
+			title = i.Title()
+			selected = i
+		} else {
+			return nil
+		}
+
+		switch msg := msg.(type) {
+		case tea.KeyPressMsg:
+			switch {
+			case key.Matches(msg, keys.choose):
+				onSelected(selected)
+				return m.NewStatusMessage(styles.statusMessage.Render("You chose " + title))
+			}
+		}
+
+		return nil
+	}
+
+	help := []key.Binding{keys.choose}
+
+	d.ShortHelpFunc = func() []key.Binding {
+		return help
+	}
+
+	d.FullHelpFunc = func() [][]key.Binding {
+		return [][]key.Binding{help}
+	}
+
+	return d
+}
+
+type delegateKeyMap struct {
+	choose key.Binding
+	remove key.Binding
+}
+
+// Additional short help entries. This satisfies the help.KeyMap interface and is entirely optional.
+func (d delegateKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{
+		d.choose,
+	}
+}
+
+// Additional full help entries. This satisfies the help.KeyMap interface and is entirely optional.
+func (d delegateKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{
+			d.choose,
+		},
+	}
+}
+
+func newDelegateKeyMap() *delegateKeyMap {
+	return &delegateKeyMap{
+		choose: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "choose"),
+		),
+	}
+}
