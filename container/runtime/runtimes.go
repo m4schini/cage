@@ -5,6 +5,7 @@ import (
 	"cage/container/runtime/docker"
 	"cage/container/runtime/podman"
 	"context"
+	"fmt"
 )
 
 const (
@@ -24,18 +25,21 @@ func Available(ctx context.Context) map[string]*Socket {
 	for runtime, socket := range sockets {
 		path, err := socket(ctx)
 		if err != nil {
+			fmt.Println(runtime, err)
 			s[runtime] = nil
 			continue
 		}
 
 		cli, err := docker.Client(ctx, path)
 		if err != nil {
+			fmt.Println(runtime, err)
 			s[runtime] = nil
 			continue
 		}
 
 		_, err = cli.Info(ctx)
 		if err != nil {
+			fmt.Println(runtime, err)
 			s[runtime] = &Socket{
 				Host:      path,
 				Available: false,
