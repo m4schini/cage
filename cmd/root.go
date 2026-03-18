@@ -2,12 +2,16 @@ package cmd
 
 import (
 	"cage/config"
-	"cage/container"
+	"cage/container/runtime"
 	"cage/state"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var cfgFile string
@@ -18,8 +22,71 @@ var rootCmd = &cobra.Command{
 	Short:  `isolate "ai" "agents"`,
 	PreRun: RequireInitialized,
 	Run: func(cmd *cobra.Command, args []string) {
-		err := container.Run(cmd.Context())
+		ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, os.Kill)
+		defer cancel()
+		cli, err := runtime.Client(ctx, "podman")
 		cobra.CheckErr(err)
+
+		r, err := cli.ContainerCreate(ctx, &container.Config{
+			Hostname:     "cage",
+			Domainname:   "cage",
+			User:         "1000",
+			AttachStdin:  true,
+			AttachStdout: true,
+			AttachStderr: true,
+			Tty:          true,
+			OpenStdin:    true,
+			Image:        "docker.io/library/ubuntu:latest",
+			Entrypoint:   []string{"bash"},
+		}, nil, nil, nil, "cage")
+		cobra.CheckErr(err)
+
+		fmt.Println(r.ID)
+		for _, warning := range r.Warnings {
+			fmt.Println(warning)
+		}
+
+		// Start the container
+		err = cli.ContainerStart(ctx, r.ID, container.StartOptions{})
+		cobra.CheckErr(err)
+
+		// Attach to the container
+		attachResp, err := cli.ContainerAttach(ctx, r.ID, container.AttachOptions{
+			Stream: true,
+			Stdin:  true,
+			Stdout: true,
+			Stderr: true,
+		})
+		cobra.CheckErr(err)
+		defer attachResp.Close()
+
+		// Set terminal to raw mode for proper TTY interaction
+		oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+		if err != nil {
+			panic(err)
+		}
+		defer term.Restore(int(os.Stdin.Fd()), oldState)
+
+		// Connect stdin/stdout - only ONE copy from Reader to Stdout
+		go io.Copy(os.Stdout, attachResp.Reader)
+		go io.Copy(attachResp.Conn, os.Stdin)
+
+		// Wait for container to finish OR interrupt signal
+		statusCh, errCh := cli.ContainerWait(ctx, r.ID, container.WaitConditionNotRunning)
+		select {
+		case err := <-errCh:
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error waiting for container: %v\n", err)
+			}
+		case <-statusCh:
+			// Container exited normally
+		case <-ctx.Done():
+			// Interrupted by user (Ctrl+C)
+			fmt.Println("\nDetaching...")
+		}
+
+		cli.ContainerStop(ctx, r.ID, container.StopOptions{})
+		cli.ContainerRemove(ctx, r.ID, container.RemoveOptions{})
 	},
 }
 
