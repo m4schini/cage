@@ -13,10 +13,7 @@ type StatusJSON struct {
 	Driver       string `json:"driver"`
 	Arch         string `json:"arch"`
 	Runtime      string `json:"runtime"`
-	MountType    string `json:"mount_type"`
-	IPAddress    string `json:"ip_address"`
 	DockerSocket string `json:"docker_socket"`
-	Kubernetes   string `json:"kubernetes"`
 	CPU          int    `json:"cpu"`
 	Memory       int    `json:"memory"`
 	Disk         int    `json:"disk"`
