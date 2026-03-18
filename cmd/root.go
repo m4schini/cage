@@ -11,6 +11,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"golang.org/x/term"
 )
 
@@ -24,7 +25,7 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, os.Kill)
 		defer cancel()
-		cli, err := runtime.Client(ctx, "podman")
+		cli, err := runtime.Client(ctx, viper.GetString("runtime"))
 		cobra.CheckErr(err)
 
 		r, err := cli.ContainerCreate(ctx, &container.Config{
