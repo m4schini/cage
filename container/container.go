@@ -11,7 +11,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"golang.org/x/term"
 )
 
 type Docker struct {
@@ -44,12 +43,11 @@ func (d *Docker) Run(ctx context.Context, config *container.Config, hostConfig *
 	}
 	defer attachResp.Close()
 
-	// Set terminal to raw mode for proper TTY interaction
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	cleanup, err := PrepareTTY()
 	if err != nil {
 		return err
 	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
+	defer cleanup()
 
 	// Connect stdin/stdout - only ONE copy from Reader to Stdout
 	go io.Copy(os.Stdout, attachResp.Reader)
