@@ -4,7 +4,8 @@ Copyright © 2026 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"cage/state"
+	"cage/cage"
+	"cage/cage/state"
 
 	"github.com/spf13/cobra"
 )
@@ -17,8 +18,16 @@ var newCmd = &cobra.Command{
 	PreRun: RequireInitialized,
 	Run: func(cmd *cobra.Command, args []string) {
 		cageName := args[0]
-		dir := state.DataDir
-		cobra.CheckErr(dir.Mkdir(cageName, 0750))
+
+		err := cage.New(cageName, state.CageDefinition{
+			Shell: "zsh",
+			Packages: []string{
+				"go",
+				"claude-code",
+			},
+			Env: nil,
+		})
+		cobra.CheckErr(err)
 	},
 }
 

@@ -1,0 +1,12 @@
+{ pkgs ? import <nixpkgs> {} }:
+
+pkgs.mkShell {
+  packages = with pkgs; [
+    {{ .Shell }}
+    {{ .Packages | joinLines }}
+  ];
+
+  shellHook = ''
+    exec ${pkgs.{{ .Shell }}}/bin/{{ .Shell }}
+  '';
+}

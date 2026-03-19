@@ -2,79 +2,75 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/cio"
-	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/containerd/oci"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/client"
+	"golang.org/x/term"
 )
 
-func Run(ctx context.Context) error {
-	const NAME = "cage3"
-	client, err := containerd.New("/run/containerd/containerd.sock")
+type Docker struct {
+	Client *client.Client
+}
+
+func (d *Docker) Run(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, containerName string) error {
+	cli := d.Client
+	containerName = strings.Join([]string{"cage", containerName}, "-")
+	r, err := cli.ContainerCreate(ctx, config, hostConfig, networkingConfig, nil, containerName)
 	if err != nil {
 		return err
 	}
-	fmt.Println("started client")
-	defer client.Close()
 
-	ctx = namespaces.WithNamespace(ctx, "cage")
-	c, err := client.LoadContainer(ctx, NAME)
+	// Start the container
+	err = cli.ContainerStart(ctx, r.ID, container.StartOptions{})
 	if err != nil {
 		return err
 	}
-	c.Delete(ctx)
 
-	// Pull the image if it doesn't exist
-	image, err := client.Pull(ctx, "codeberg.org/aur0ra/cage-base:latest", containerd.WithPullUnpack)
+	// Attach to the container
+	attachResp, err := cli.ContainerAttach(ctx, r.ID, container.AttachOptions{
+		Stream: true,
+		Stdin:  true,
+		Stdout: true,
+		Stderr: true,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to pull image: %w", err)
+		return err
 	}
-	fmt.Println("pulled image")
+	defer attachResp.Close()
 
-	// Create a container
-	container, err := client.NewContainer(
-		ctx,
-		NAME,
-		containerd.WithImage(image),
-		containerd.WithNewSnapshot(NAME+"-snapshot", image),
-		containerd.WithNewSpec(oci.WithImageConfig(image)),
+	// Set terminal to raw mode for proper TTY interaction
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		return err
+	}
+	defer term.Restore(int(os.Stdin.Fd()), oldState)
+
+	// Connect stdin/stdout - only ONE copy from Reader to Stdout
+	go io.Copy(os.Stdout, attachResp.Reader)
+	go io.Copy(attachResp.Conn, os.Stdin)
+
+	// Wait for container to finish OR interrupt signal
+	statusCh, errCh := cli.ContainerWait(ctx, r.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return err
+		}
+	case <-statusCh:
+		// Container exited normally
+	case <-ctx.Done():
+		// Interrupted by user (Ctrl+C)
+		fmt.Println("\nDetaching...")
+	}
+
+	return errors.Join(
+		cli.ContainerStop(ctx, r.ID, container.StopOptions{}),
+		cli.ContainerRemove(ctx, r.ID, container.RemoveOptions{}),
 	)
-	if err != nil {
-		return fmt.Errorf("failed to create container: %w", err)
-	}
-	defer container.Delete(ctx, containerd.WithSnapshotCleanup)
-	fmt.Println("created container")
-
-	// Create a task (running instance of the container)
-	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
-	if err != nil {
-		return fmt.Errorf("failed to create task: %w", err)
-	}
-	defer task.Delete(ctx)
-	fmt.Println("created task")
-
-	// Wait for the task to exit
-	exitStatusC, err := task.Wait(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to wait for task: %w", err)
-	}
-
-	// Start the task
-	if err := task.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start task: %w", err)
-	}
-	fmt.Println("started container")
-
-	// Wait for the task to finish
-	status := <-exitStatusC
-	code, _, err := status.Result()
-	if err != nil {
-		return fmt.Errorf("failed to get task result: %w", err)
-	}
-
-	fmt.Printf("Container exited with code: %d\n", code)
-
-	return nil
 }

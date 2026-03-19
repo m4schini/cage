@@ -1,7 +1,7 @@
 package state
 
 import (
-	"cage/config"
+	"cage/cage/config"
 	"errors"
 	"fmt"
 	"os"
@@ -70,6 +70,11 @@ func LoadDataDir(dirPath string) (dir *os.Root, exists bool, err error) {
 	}
 
 	dir, err = os.OpenRoot(dirPath)
+	if err != nil {
+		return nil, false, err
+	}
+
+	err = InitNixStore()
 	if err != nil {
 		return nil, false, err
 	}

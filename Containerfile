@@ -1,19 +1,86 @@
-FROM docker.io/library/ubuntu:latest
+# =============================================================================
+# Dev Container — Debian + Nix Shell
+# =============================================================================
+#
+# Build example:
+#   podman run -it \
+#       --volume=./shell.nix:/home/developer/shell.nix:ro \
+#       --volume=/home/aurora/.zshrc:/home/developer/.zshrc \
+#       --volume=nixstore:/nix:Z \
+#       --rm \
+#       my-devcontainer
+#
+# Run example:
+#   podman run --rm -it my-devcontainer
+# =============================================================================
 
-RUN apt-get update
-RUN apt-get reinstall -y ca-certificates
-RUN update-ca-certificates
-RUN apt-get install -y --no-install-recommends zsh curl
+ARG DEBIAN_VERSION=bookworm-slim
+FROM debian:${DEBIAN_VERSION}
 
-USER ubuntu
+# -----------------------------------------------------------------------------
+# Build arguments
+# -----------------------------------------------------------------------------
 
-WORKDIR /home/ubuntu
+# UID/GID for the non-root developer user
+ARG DEV_UID=1000
+ARG DEV_GID=1000
+ARG DEV_USER=developer
 
-ADD --chown=ubuntu:ubuntu https://raw.githubusercontent.com/grml/grml-etc-core/master/etc/zsh/zshrc .zshrc
-RUN echo 'export PATH="$HOME/.local/bin:$PATH"' >> .zshrc
+# -----------------------------------------------------------------------------
+# 1. System bootstrap
+# -----------------------------------------------------------------------------
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    set -eux; \
+    apt-get update -qq; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        xz-utils \
+        git \
+        bash \
+        procps \
+        sudo;
 
-RUN curl -fsSL https://claude.ai/install.sh | bash
+# -----------------------------------------------------------------------------
+# Create the non-root developer user
+# -----------------------------------------------------------------------------
+RUN set -eux; \
+    groupadd --gid "${DEV_GID}" "${DEV_USER}"; \
+    useradd \
+        --uid "${DEV_UID}" \
+        --gid "${DEV_GID}" \
+        --shell /bin/bash \
+        --create-home \
+        "${DEV_USER}"; \
+    echo "${DEV_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${DEV_USER}; \
+    chmod 0440 /etc/sudoers.d/${DEV_USER}
 
-WORKDIR /home/ubuntu/workspace
+# -----------------------------------------------------------------------------
+# Install Nix (single-user mode, no daemon required)
+# -----------------------------------------------------------------------------
+USER ${DEV_USER}
+WORKDIR /home/${DEV_USER}
+RUN curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon
+RUN . "/home/${DEV_USER}/.nix-profile/etc/profile.d/nix.sh"
+RUN /home/${DEV_USER}/.nix-profile/bin/nix --version # Smoke-test
+ENV NIXPKGS_ALLOW_UNFREE=1
+RUN touch /home/${DEV_USER}/shell.nix
 
-CMD ["/usr/bin/zsh"]
+# -----------------------------------------------------------------------------
+# Label
+# -----------------------------------------------------------------------------
+LABEL org.opencontainers.image.title="cage"
+LABEL org.opencontainers.image.description="Isolate agentic ai"
+
+LABEL org.opencontainers.image.vendor="cage"
+LABEL security.non-root="true"
+LABEL security.no-new-privileges="true"
+
+WORKDIR /home/${DEV_USER}/workspace
+USER ${DEV_USER}
+
+# Default to an interactive bash shell; override as needed.
+ENV PATH="/home/${DEV_USER}/.nix-profile/bin:${PATH}"
+ENTRYPOINT ["nix-shell"]
+CMD ["../shell.nix"]
