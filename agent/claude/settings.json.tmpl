@@ -1,0 +1,96 @@
+{{- /* ~/.claude/settings.json — Go template for Claude Code user settings
+     Render with: envsubst, gomplate, or any Go template engine.
+     All top-level keys are optional; omit or comment out what you don't need.
+*/ -}}
+{
+"$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+{{- /* ── Authentication & API ───────────────────────────────────────── */ -}}
+"env": {
+{{- if .ApiKey }}
+    "ANTHROPIC_API_KEY": "{{ .ApiKey }}",
+{{- end }}
+{{- if .BaseURL }}
+    "ANTHROPIC_BASE_URL": "{{ .BaseURL }}",
+{{- end }}
+{{- if .SonnetModel }}
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "{{ .SonnetModel }}",
+{{- end }}
+{{- if .HaikuModel }}
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "{{ .HaikuModel }}",
+{{- end }}
+{{- if .OpusModel }}
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "{{ .OpusModel }}",
+{{- end }}
+{{- if .ApiTimeoutMs }}
+    "API_TIMEOUT_MS": "{{ .ApiTimeoutMs }}"
+{{- end }}
+},
+
+{{- /* ── Model selection ─────────────────────────────────────────────
+       Overridden by --model flag or /model command in-session.
+       Valid aliases: claude-sonnet-4-6, claude-opus-4-6, claude-haiku-4-5-...
+  */ -}}
+{{- if .Model }}
+    "model": "{{ .Model }}",
+{{- end }}
+
+{{- /* ── Permissions ──────────────────────────────────────────────────
+       Deny is evaluated before allow. First match wins.
+       Syntax: "Bash(cmd)", "Read(path)", "Edit(path)", "WebFetch(domain)"
+  */ -}}
+"permissions": {
+"allow": [
+{{- range $i, $rule := .Permissions.Allow }}
+    {{ if $i }},{{ end }}"{{ $rule }}"
+{{- end }}
+],
+"deny": [
+{{- range $i, $rule := .Permissions.Deny }}
+    {{ if $i }},{{ end }}"{{ $rule }}"
+{{- end }}
+]
+},
+
+{{- /* ── Git attribution ─────────────────────────────────────────────
+       Set to "" to suppress Co-Authored-By / PR footer entirely.
+  */ -}}
+"attribution": {
+"commits": {{ .Attribution.Commits }},
+"pullRequests": {{ .Attribution.PullRequests }}
+},
+
+{{- /* ── UI / UX ──────────────────────────────────────────────────── */ -}}
+{{- if ne .ShowTurnDuration nil }}
+    "showTurnDuration": {{ .ShowTurnDuration }},
+{{- end }}
+{{- if ne .SpinnerTipsEnabled nil }}
+    "spinnerTipsEnabled": {{ .SpinnerTipsEnabled }},
+{{- end }}
+{{- if ne .AlwaysThinkingEnabled nil }}
+    "alwaysThinkingEnabled": {{ .AlwaysThinkingEnabled }},
+{{- end }}
+
+{{- /* ── Auto-compact ─────────────────────────────────────────────────
+       Percentage of context window used before compaction kicks in (0–100).
+       Override via CLAUDE_AUTOCOMPACT_PCT_OVERRIDE env var.
+  */ -}}
+{{- if .AutoCompactPct }}
+    "autoCompactThreshold": {{ .AutoCompactPct }},
+{{- end }}
+
+{{- /* ── Sandbox (bash isolation) ────────────────────────────────────
+       enableWeakerNestedSandbox: set true only inside unprivileged Docker.
+  */ -}}
+"sandbox": {
+"enabled": {{ .Sandbox.Enabled }},
+{{- if .Sandbox.UnsandboxedCommands }}
+    "unsandboxedCommands": [
+    {{- range $i, $cmd := .Sandbox.UnsandboxedCommands }}
+        {{ if $i }},{{ end }}"{{ $cmd }}"
+    {{- end }}
+    ],
+{{- end }}
+"enableWeakerNestedSandbox": {{ .Sandbox.WeakerNested }}
+}
+}

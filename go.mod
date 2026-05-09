@@ -8,6 +8,8 @@ require (
 	charm.land/lipgloss/v2 v2.0.2
 	github.com/adrg/xdg v0.5.3
 	github.com/docker/docker v28.5.2+incompatible
+	github.com/godbus/dbus/v5 v5.2.2
+	github.com/keybase/go-keychain v0.0.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	golang.org/x/term v0.40.0
@@ -39,6 +41,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/keybase/dbus v0.0.0-20220506165403-5aa21ea2c23a // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-runewidth v0.0.20 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
@@ -70,6 +73,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.40.0 // indirect
 	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect

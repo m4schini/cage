@@ -2,12 +2,12 @@
 
 pkgs.mkShell {
   packages = with pkgs; [
-    zsh
+    fish
     go
     claude-code
   ];
 
   shellHook = ''
-    exec ${pkgs.zsh}/bin/zsh
+    exec ${pkgs.fish}/bin/fish
   '';
 }
