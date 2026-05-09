@@ -6,10 +6,12 @@ import (
 	"cage/cage/state"
 	ctr "cage/container"
 	"cage/container/runtime"
+
 	"fmt"
 	"os"
 	"os/signal"
 
+	_ "embed"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -24,11 +26,13 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, os.Kill)
 		defer cancel()
-		cli, err := runtime.Client(ctx, viper.GetString("runtime"))
+		rt := viper.GetString("runtime")
+		fmt.Println("runtime:", rt)
+		cli, err := runtime.Client(ctx, rt)
 		cobra.CheckErr(err)
 
 		d := ctr.Docker{Client: cli}
-		err = cage.Run(ctx, "ais", &d)
+		err = cage.Run(ctx, cli, "ais", &d)
 		cobra.CheckErr(err)
 	},
 }

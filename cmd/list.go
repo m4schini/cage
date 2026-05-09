@@ -21,6 +21,7 @@ var listCmd = &cobra.Command{
 		dir := state.DataDir.FS().(fs.ReadDirFS)
 		entries, err := dir.ReadDir(".")
 		cobra.CheckErr(err)
+		fmt.Println("Location:", state.DataDirPath)
 		for _, entry := range entries {
 			if entry.IsDir() {
 				fmt.Println(entry.Name())

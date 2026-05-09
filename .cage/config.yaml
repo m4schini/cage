@@ -1,0 +1,10 @@
+name: cage
+
+packages:
+  - go
+
+agent:
+  authTokenSecretLabel: "aikey:ais"
+  baseURL: "https://aikeys.maibornwolff.de"
+  model: "claude-opus-4-7"
+  haikuModel: "claude-haiku-4.5"

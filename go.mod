@@ -7,6 +7,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.2
 	charm.land/lipgloss/v2 v2.0.2
 	github.com/adrg/xdg v0.5.3
+	github.com/bitwarden/sdk-go v1.0.2
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/keybase/go-keychain v0.0.1
@@ -14,6 +15,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	golang.org/x/term v0.40.0
 	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

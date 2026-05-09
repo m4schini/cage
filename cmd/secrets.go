@@ -6,8 +6,10 @@ package cmd
 import (
 	"cage/agent/secrets"
 	"fmt"
+	"syscall"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // secretsCmd represents the secrets command
@@ -37,18 +39,63 @@ var secretsListCmd = &cobra.Command{
 }
 
 var secretsAddCmd = &cobra.Command{
-	Use:   "add",
+	Use:   "add LABEL",
 	Short: "add secret",
+	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("secrets called")
+		fmt.Print("Secret: ")
+		bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+		fmt.Println() // move to next line after user presses Enter
+		cobra.CheckErr(err)
+
+		cobra.CheckErr(secrets.Store(args[0], string(bytePassword)))
 	},
 }
 
 var secretsGetCmd = &cobra.Command{
-	Use:   "get",
+	Use:   "get LABEL",
 	Short: "get secret",
+	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("secrets called")
+		unredacted, err := cmd.Flags().GetBool("unredacted")
+		cobra.CheckErr(err)
+
+		s, err := secrets.Retrieve(args[0])
+		cobra.CheckErr(err)
+
+		if !unredacted {
+			s = redact(s)
+		}
+
+		fmt.Println(s)
+	},
+}
+
+func redact(s string) string {
+	runes := []rune(s) // handle Unicode correctly
+	n := len(runes)
+
+	if n <= 4 {
+		return s
+	}
+
+	// Create a slice of '*' for all but the last 4 characters
+	redacted := make([]rune, n)
+	for i := 0; i < n-4; i++ {
+		redacted[i] = '*'
+	}
+	copy(redacted[n-4:], runes[n-4:])
+
+	return string(redacted)
+}
+
+var secretsDeleteCmd = &cobra.Command{
+	Use:     "delete LABEL",
+	Aliases: []string{"rm"},
+	Short:   "delete secret",
+	Args:    cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		cobra.CheckErr(secrets.Delete(args[0]))
 	},
 }
 
@@ -57,6 +104,9 @@ func init() {
 	secretsCmd.AddCommand(secretsListCmd)
 	secretsCmd.AddCommand(secretsAddCmd)
 	secretsCmd.AddCommand(secretsGetCmd)
+	secretsCmd.AddCommand(secretsDeleteCmd)
+
+	secretsGetCmd.Flags().Bool("unredacted", false, "show secret unredacted")
 
 	// Here you will define your flags and configuration settings.
 
