@@ -4,8 +4,9 @@ import (
 	"cage/cage"
 	config2 "cage/cage/config"
 	"cage/cage/state"
-	ctr "cage/container"
 	"cage/container/runtime"
+	"cage/nix"
+	"time"
 
 	"fmt"
 	"os"
@@ -27,13 +28,41 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, os.Kill)
 		defer cancel()
+
+		if dryrun, err := cmd.Flags().GetBool("dry-run"); err == nil && dryrun {
+			cfg, lastModified, err := cage.LoadConfig()
+			cobra.CheckErr(err)
+
+			fmt.Println("Image:", cfg.ImageName())
+			fmt.Println("Last Modified:", lastModified.Format(time.RFC822))
+			fmt.Println()
+			fmt.Println("ENV:")
+			env, err := cfg.ClaudeCodeEnv(true)
+			cobra.CheckErr(err)
+
+			for _, s := range env {
+				fmt.Println(s)
+			}
+
+			nix, err := nix.NewNixShellString(nix.ShellNixPackages{
+				Packages: cfg.Packages,
+				Shell:    "bash",
+			})
+			cobra.CheckErr(err)
+
+			fmt.Println()
+			fmt.Println("shell.nix:")
+			fmt.Println(nix)
+
+			return
+		}
+
 		rt := viper.GetString("runtime")
 		fmt.Println("runtime:", rt)
 		cli, err := runtime.Client(ctx, rt)
 		cobra.CheckErr(err)
 
-		d := ctr.Docker{Client: cli}
-		err = cage.Run(ctx, cli, "ais", &d)
+		err = cage.Run(ctx, cli)
 		cobra.CheckErr(err)
 	},
 }
@@ -64,7 +93,7 @@ func init() {
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
-	//rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.Flags().Bool("dry-run", false, "Dry run, only show build/run config")
 }
 
 // initConfig reads in config file and ENV variables if set.

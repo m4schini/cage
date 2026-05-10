@@ -24,6 +24,7 @@ var statusCmd = &cobra.Command{
 		fmt.Println()
 
 		fmt.Println("Secret Backends:", keyring.AvailableBackends())
+		fmt.Println()
 
 		fmt.Println("Runtimes:")
 		runtimes := runtime.Available(ctx)

@@ -1,5 +1,0 @@
-◄ 42s ◎ podman run
-    -it
-    --volume=./shell.nix:/home/developer/shell.nix:ro
-    --volume=/home/aurora/.zshrc:/home/developer/.zshrc
-    --volume=nixstore:/nix:Z --rm my-devcontainer

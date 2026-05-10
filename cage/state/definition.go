@@ -2,25 +2,15 @@ package state
 
 import (
 	"cage/agent/secrets"
-	"cage/cage/config"
 	"fmt"
-	"io"
+	"strings"
 
-	"gopkg.in/yaml.v2"
+	"github.com/spf13/viper"
 )
-
-var DefinitionFileName = fmt.Sprintf("%v.yaml", config.AppName)
 
 type EnvVar struct {
 	Key   string `yaml:"key"`
 	Value string `yaml:"value"`
-}
-
-type CageDefinition struct {
-	Image    string
-	Shell    string   `yaml:"shell"`
-	Packages []string `yaml:"packages"`
-	Env      []EnvVar `yaml:"env"`
 }
 
 type CageConfig struct {
@@ -32,15 +22,23 @@ type CageConfig struct {
 		Model                string `yaml:"model"`
 		HaikuModel           string `yaml:"haikuModel"`
 	} `yaml:"agent"`
+	Env []EnvVar `yaml:"env"`
 }
 
-func (c CageConfig) ClaudeCodeEnv() ([]string, error) {
-	var env []string
+func (c CageConfig) ImageName() string {
+	return "localhost/cage:" + strings.ToLower(c.Name)
+}
+
+func (c CageConfig) ClaudeCodeEnv(redactSecret ...bool) (env []string, err error) {
 	if c.Agent.AuthTokenSecretLabel != "" {
-		s, err := secrets.Retrieve(c.Agent.AuthTokenSecretLabel)
-		if err != nil {
-			return nil, err
+		var s = fmt.Sprintf("<%v=%v>", viper.GetString("secrets.backend"), c.Agent.AuthTokenSecretLabel)
+		if len(redactSecret) == 0 || !redactSecret[0] {
+			s, err = secrets.Retrieve(c.Agent.AuthTokenSecretLabel)
+			if err != nil {
+				return nil, err
+			}
 		}
+
 		env = append(env, fmt.Sprintf("ANTHROPIC_AUTH_TOKEN=%v", s))
 	}
 	if c.Agent.BaseURL != "" {
@@ -54,15 +52,9 @@ func (c CageConfig) ClaudeCodeEnv() ([]string, error) {
 	}
 	env = append(env, "DISABLE_TELEMETRY=1")
 
+	for _, envVar := range c.Env {
+		env = append(env, fmt.Sprintf("%v=%v", envVar.Key, envVar.Value))
+	}
+
 	return env, nil
-}
-
-func Write(def CageDefinition, writer io.Writer) error {
-	return yaml.NewEncoder(writer).Encode(&def)
-}
-
-func Read(reader io.Reader) (CageDefinition, error) {
-	var def CageDefinition
-	err := yaml.NewDecoder(reader).Decode(&def)
-	return def, err
 }

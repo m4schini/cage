@@ -3,6 +3,10 @@ name: cage
 packages:
   - go
 
+env:
+  - key: "TEST"
+    value: "testval"
+
 agent:
   authTokenSecretLabel: "aikey:ais"
   baseURL: "https://aikeys.maibornwolff.de"

@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"cage/nix"
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"time"
@@ -14,13 +13,11 @@ import (
 	"github.com/docker/docker/client"
 )
 
-func BuildImage(ctx context.Context, cli *client.Client, dockerfile string, tags []string, packages nix.ShellNixPackages) error {
+func BuildImage(ctx context.Context, cli *client.Client, verbose bool, dockerfile string, tags []string, packages nix.ShellNixPackages) error {
 	shellNix, err := nix.NewNixShellString(packages)
 	if err != nil {
 		return err
 	}
-
-	fmt.Println(shellNix)
 
 	buf := new(bytes.Buffer)
 	tw := tar.NewWriter(buf)
@@ -61,7 +58,11 @@ func BuildImage(ctx context.Context, cli *client.Client, dockerfile string, tags
 	}
 	defer resp.Body.Close()
 
-	_, err = io.Copy(os.Stdout, resp.Body)
+	if verbose {
+		_, err = io.Copy(os.Stdout, resp.Body)
+	} else {
+		_, err = io.Copy(io.Discard, resp.Body)
+	}
 	return err
 }
 

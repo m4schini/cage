@@ -1,310 +1,177 @@
-//go:build !darwin && !ios && !linux
-
-// Package anthropickeys manages multiple named Anthropic API keys.
-// On platforms where go-keychain has no native backend (Windows, WASM, …)
-// this file provides an implementation backed by Bitwarden Secrets Manager.
+// Bitwarden / Vaultwarden backend. Shells out to the official `bw` CLI so the
+// build stays CGO-free. Items are stored as type-1 (login) vault entries with
+// the secret in `login.password`, and the item `name` namespaced with the
+// "cage:" prefix.
 //
-// # Prerequisites
+// Prerequisites for the user:
 //
-//  1. A Bitwarden Secrets Manager account with a machine account access token.
-//  2. A pre-existing Project in Bitwarden where the keys will be stored.
-//  3. The environment variables (or explicit Config fields) described below.
+//   - `bw` is on $PATH (https://bitwarden.com/help/cli/)
+//   - For Vaultwarden: `bw config server <vaultwarden-url>` once
+//   - `bw login` once, then `bw unlock --raw` per shell session and export the
+//     printed token as $BW_SESSION
 //
-// # Environment variables (used when Config fields are empty)
+// Selection:
 //
-//	BWS_ACCESS_TOKEN   – machine account access token
-//	BWS_ORGANIZATION_ID – organization UUID
-//	BWS_PROJECT_ID     – project UUID where secrets are stored
-//	BWS_API_URL        – optional; defaults to https://api.bitwarden.com
-//	BWS_IDENTITY_URL   – optional; defaults to https://identity.bitwarden.com
-//	BWS_STATE_FILE     – optional; path for SDK state caching
-package anthropickeys
+//	secrets.backend: bitwarden     # in $XDG_CONFIG_HOME/cage/config.yaml
+package secrets
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
-
-	sdk "github.com/bitwarden/sdk-go"
 )
 
 const (
-	defaultAPIURL      = "https://api.bitwarden.com"
-	defaultIdentityURL = "https://identity.bitwarden.com"
+	bwBinary     = "bw"
+	bwItemPrefix = "cage:"
+	bwTypeLogin  = 1 // bitwarden item type code for "login"
 )
 
-// Config holds the Bitwarden Secrets Manager credentials.
-// Zero-value fields fall back to the corresponding environment variables.
-type Config struct {
-	// AccessToken is the machine account token (BWS_ACCESS_TOKEN).
-	AccessToken string
-	// OrganizationID is the Bitwarden organization UUID (BWS_ORGANIZATION_ID).
-	OrganizationID string
-	// ProjectID is the project UUID where secrets are stored (BWS_PROJECT_ID).
-	ProjectID string
-	// APIURL defaults to https://api.bitwarden.com (BWS_API_URL).
-	APIURL string
-	// IdentityURL defaults to https://identity.bitwarden.com (BWS_IDENTITY_URL).
-	IdentityURL string
-	// StateFile is an optional path for SDK state; pass empty string to disable.
-	StateFile string
+// BitwardenBackend stores secrets in a Bitwarden- or Vaultwarden-compatible
+// vault via the `bw` CLI.
+type BitwardenBackend struct{}
+
+type bwItem struct {
+	ID    string   `json:"id,omitempty"`
+	Type  int      `json:"type"`
+	Name  string   `json:"name"`
+	Login *bwLogin `json:"login,omitempty"`
 }
 
-// bwsConfig is the package-level Config used by the store/retrieve/list/del
-// functions.  Set it with Configure() before calling any public function.
-var bwsConfig Config
-
-// Configure sets the Bitwarden credentials used by this package.
-// It must be called before Store/Retrieve/List/Delete on non-keychain platforms.
-// If not called, the package reads credentials from environment variables.
-func Configure(c Config) { bwsConfig = c }
-
-// resolvedConfig merges explicit Config fields with env-var fallbacks.
-func resolvedConfig() (Config, error) {
-	c := bwsConfig
-
-	if c.AccessToken == "" {
-		c.AccessToken = os.Getenv("BWS_ACCESS_TOKEN")
-	}
-	if c.OrganizationID == "" {
-		c.OrganizationID = os.Getenv("BWS_ORGANIZATION_ID")
-	}
-	if c.ProjectID == "" {
-		c.ProjectID = os.Getenv("BWS_PROJECT_ID")
-	}
-	if c.APIURL == "" {
-		if v := os.Getenv("BWS_API_URL"); v != "" {
-			c.APIURL = v
-		} else {
-			c.APIURL = defaultAPIURL
-		}
-	}
-	if c.IdentityURL == "" {
-		if v := os.Getenv("BWS_IDENTITY_URL"); v != "" {
-			c.IdentityURL = v
-		} else {
-			c.IdentityURL = defaultIdentityURL
-		}
-	}
-	if c.StateFile == "" {
-		c.StateFile = os.Getenv("BWS_STATE_FILE")
-	}
-
-	var missing []string
-	if c.AccessToken == "" {
-		missing = append(missing, "AccessToken / BWS_ACCESS_TOKEN")
-	}
-	if c.OrganizationID == "" {
-		missing = append(missing, "OrganizationID / BWS_ORGANIZATION_ID")
-	}
-	if c.ProjectID == "" {
-		missing = append(missing, "ProjectID / BWS_PROJECT_ID")
-	}
-	if len(missing) > 0 {
-		return Config{}, fmt.Errorf("bitwarden: missing required config: %s", strings.Join(missing, ", "))
-	}
-	return c, nil
+type bwLogin struct {
+	Password string `json:"password"`
 }
 
-// newClient creates an authenticated Bitwarden SDK client and returns it
-// together with a close function the caller must defer.
-func newClient(c Config) (*sdk.BitwardenClient, func(), error) {
-	client, err := sdk.NewBitwardenClient(&c.APIURL, &c.IdentityURL)
-	if err != nil {
-		return nil, nil, fmt.Errorf("bitwarden: create client: %w", err)
+func (BitwardenBackend) Store(label, secret string) error {
+	name := bwItemName(label)
+	payload := bwItem{
+		Type:  bwTypeLogin,
+		Name:  name,
+		Login: &bwLogin{Password: secret},
 	}
-
-	var stateFile *string
-	if c.StateFile != "" {
-		stateFile = &c.StateFile
-	}
-	if err := client.AccessTokenLogin(c.AccessToken, stateFile); err != nil {
-		client.Close()
-		return nil, nil, fmt.Errorf("bitwarden: login: %w", err)
-	}
-	return &client, func() { client.Close() }, nil
-}
-
-// secretKey converts a user label into the Bitwarden secret key (the "name"
-// field), applying the cage: prefix consistently.
-func secretKey(label string) string {
-	return accountPrefix + strings.ToLower(strings.TrimSpace(label))
-}
-
-// labelFromKey is the inverse of secretKey.
-func labelFromKey(key string) (string, bool) {
-	after, ok := strings.CutPrefix(key, accountPrefix)
-	return after, ok
-}
-
-const accountPrefix = "cage:"
-
-// ── backend functions called by keychain.go ─────────────────────────────────
-
-func store(label, apiKey string) error {
-	c, err := resolvedConfig()
-	if err != nil {
-		return err
-	}
-	client, close, err := newClient(c)
-	if err != nil {
-		return err
-	}
-	defer close()
-
-	key := secretKey(label)
-
-	// Check whether a secret with this key already exists in the project.
-	existingID, err := findSecretID(client, c, key)
+	encoded, err := bwEncode(payload)
 	if err != nil {
 		return err
 	}
 
-	if existingID != "" {
-		// Update the existing secret in place.
-		_, err = (*client).Secrets().Update(
-			existingID,
-			key,
-			apiKey,
-			"Managed by cage anthropickeys", // note
-			c.OrganizationID,
-			[]string{c.ProjectID},
-		)
-		if err != nil {
-			return fmt.Errorf("bitwarden: update secret %q: %w", label, err)
+	existing, err := bwFindItem(name)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if existing != nil {
+		if _, err := bwRun(nil, "edit", "item", existing.ID, encoded); err != nil {
+			return fmt.Errorf("updating %q: %w", label, err)
 		}
 		return nil
 	}
-
-	// Create a new secret.
-	_, err = (*client).Secrets().Create(
-		key,
-		apiKey,
-		"Managed by cage anthropickeys", // note
-		c.OrganizationID,
-		[]string{c.ProjectID},
-	)
-	if err != nil {
-		return fmt.Errorf("bitwarden: create secret %q: %w", label, err)
+	if _, err := bwRun(nil, "create", "item", encoded); err != nil {
+		return fmt.Errorf("creating %q: %w", label, err)
 	}
 	return nil
 }
 
-func retrieve(label string) (string, error) {
-	c, err := resolvedConfig()
+func (BitwardenBackend) Retrieve(label string) (string, error) {
+	item, err := bwFindItem(bwItemName(label))
 	if err != nil {
 		return "", err
 	}
-	client, close, err := newClient(c)
-	if err != nil {
-		return "", err
+	if item.Login == nil {
+		return "", fmt.Errorf("bitwarden item %q has no login.password", label)
 	}
-	defer close()
-
-	id, err := findSecretID(client, c, secretKey(label))
-	if err != nil {
-		return "", err
-	}
-	if id == "" {
-		return "", ErrNotFound
-	}
-
-	secret, err := (*client).Secrets().Get(id)
-	if err != nil {
-		return "", fmt.Errorf("bitwarden: get secret %q: %w", label, err)
-	}
-	return secret.Value, nil
+	return item.Login.Password, nil
 }
 
-func list() ([]string, error) {
-	c, err := resolvedConfig()
+func (BitwardenBackend) List() ([]string, error) {
+	out, err := bwRun(nil, "list", "items", "--search", bwItemPrefix)
 	if err != nil {
 		return nil, err
 	}
-	client, close, err := newClient(c)
-	if err != nil {
-		return nil, err
-	}
-	defer close()
-
-	resp, err := (*client).Secrets().List(c.OrganizationID)
-	if err != nil {
-		return nil, fmt.Errorf("bitwarden: list secrets: %w", err)
+	var items []bwItem
+	if err := json.Unmarshal(out, &items); err != nil {
+		return nil, fmt.Errorf("parsing `bw list items`: %w", err)
 	}
 
-	var labels []string
-	for _, s := range resp.Data {
-		// Only surface secrets that belong to our project and carry the prefix.
-		if !inProject(s.ProjectID, c.ProjectID) {
-			continue
-		}
-		if lbl, ok := labelFromKey(s.Key); ok {
+	labels := make([]string, 0, len(items))
+	for _, it := range items {
+		// `--search` is substring-match across several fields; re-filter on
+		// the name prefix to avoid surfacing unrelated items.
+		if lbl, ok := strings.CutPrefix(it.Name, bwItemPrefix); ok {
 			labels = append(labels, lbl)
 		}
 	}
 	return labels, nil
 }
 
-func del(label string) error {
-	c, err := resolvedConfig()
+func (BitwardenBackend) Delete(label string) error {
+	item, err := bwFindItem(bwItemName(label))
 	if err != nil {
 		return err
 	}
-	client, close, err := newClient(c)
-	if err != nil {
-		return err
-	}
-	defer close()
-
-	id, err := findSecretID(client, c, secretKey(label))
-	if err != nil {
-		return err
-	}
-	if id == "" {
-		return ErrNotFound
-	}
-
-	result, err := (*client).Secrets().Delete([]string{id})
-	if err != nil {
-		return fmt.Errorf("bitwarden: delete secret %q: %w", label, err)
-	}
-	// The SDK returns per-item errors in the response.
-	for _, d := range result.Data {
-		if d.Error != nil {
-			return fmt.Errorf("bitwarden: delete secret %q: %s", label, *d.Error)
-		}
+	if _, err := bwRun(nil, "delete", "item", item.ID); err != nil {
+		return fmt.Errorf("deleting %q: %w", label, err)
 	}
 	return nil
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+func bwItemName(label string) string {
+	return bwItemPrefix + strings.ToLower(strings.TrimSpace(label))
+}
 
-// findSecretID returns the UUID of the secret whose Key matches key and that
-// belongs to the configured project, or "" if none is found.
-func findSecretID(client *sdk.BitwardenClient, c Config, key string) (string, error) {
-	resp, err := (*client).Secrets().List(c.OrganizationID)
+// bwFindItem looks up an item by its exact name. `bw list --search` is
+// substring-match, so we must verify the name on each result.
+func bwFindItem(name string) (*bwItem, error) {
+	out, err := bwRun(nil, "list", "items", "--search", name)
 	if err != nil {
-		return "", fmt.Errorf("bitwarden: list secrets: %w", err)
+		return nil, err
 	}
-	for _, s := range resp.Data {
-		if s.Key == key && inProject(s.ProjectID, c.ProjectID) {
-			return s.ID, nil
+	var items []bwItem
+	if err := json.Unmarshal(out, &items); err != nil {
+		return nil, fmt.Errorf("parsing `bw list items`: %w", err)
+	}
+	for i := range items {
+		if items[i].Name == name {
+			return &items[i], nil
 		}
 	}
-	return "", nil
+	return nil, ErrNotFound
 }
 
-// inProject returns true when projectID matches the expected project UUID.
-// The SDK may return a nil pointer for secrets without a project.
-func inProject(projectID *string, expected string) bool {
-	if projectID == nil {
-		return false
+func bwEncode(v any) (string, error) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("marshalling bw item: %w", err)
 	}
-	return *projectID == expected
+	return base64.StdEncoding.EncodeToString(body), nil
 }
 
-// ErrNotSupported is never returned by this backend, but it must be declared
-// so that callers using errors.Is(err, ErrNotSupported) compile cleanly.
-// The real sentinel lives in keychain.go.
-var _ = errors.New // ensure errors import is used
+// bwRun invokes the `bw` CLI with BW_SESSION threaded through. Stdin is
+// always closed (nil reader) so bw cannot block on an interactive prompt.
+func bwRun(stdin []byte, args ...string) ([]byte, error) {
+	if _, err := exec.LookPath(bwBinary); err != nil {
+		return nil, fmt.Errorf("`bw` CLI not found on PATH: %w", err)
+	}
+	session := os.Getenv("BW_SESSION")
+	if session == "" {
+		return nil, errors.New("BW_SESSION is not set; run `bw unlock --raw` and export it")
+	}
+
+	cmd := exec.Command(bwBinary, args...)
+	cmd.Env = append(os.Environ(), "BW_SESSION="+session)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("bw %s: %w: %s",
+			strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.Bytes(), nil
+}

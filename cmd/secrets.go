@@ -14,14 +14,9 @@ import (
 
 // secretsCmd represents the secrets command
 var secretsCmd = &cobra.Command{
-	Use:   "secrets",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Use:     "secrets",
+	Aliases: []string{"secret"},
+	Short:   "Manage secrets (mainly ai api keys) for your cages",
 }
 
 var secretsListCmd = &cobra.Command{

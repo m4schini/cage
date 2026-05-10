@@ -2,14 +2,14 @@
 //
 // Backends are selected at runtime via the viper key "secrets.backend":
 //
-//	keychain (default) – the OS-native store
-//	    macOS  – Security.framework (Keychain)
-//	    Linux  – D-Bus SecretService (gnome-keyring / ksecretservice)
-//	bitwarden          – the `bw` CLI, compatible with Bitwarden and Vaultwarden
+//	keyring (default) – via 99designs/keyring; transparently uses the macOS
+//	                    Keychain, freedesktop secret-service, Windows
+//	                    credential manager, KDE kwallet, or an encrypted-file
+//	                    fallback depending on the host.
+//	bitwarden         – the `bw` CLI, compatible with Bitwarden and Vaultwarden.
 //
-// Keys are namespaced under the "cage:" prefix so that List() only surfaces
-// items written by this package even if other applications share the same
-// service / vault.
+// Items are scoped to the service name "cage", so List() only surfaces items
+// written by this package.
 package secrets
 
 import (
@@ -40,19 +40,17 @@ type Backend interface {
 	Delete(label string) error
 }
 
-// KeychainBackend stores secrets in the OS-native keychain. Its methods are
-// defined per-platform in secrets_{linux,darwin,stub}.go via build tags.
-type KeychainBackend struct{}
-
 // currentBackend resolves the active backend from viper. The default is the
-// OS keychain, preserving prior behaviour for callers that have not opted in
-// to a different store.
+// 99designs/keyring backend, which works across macOS, Linux, and Windows
+// without per-platform code.
 func currentBackend() Backend {
 	switch viper.GetString("secrets.backend") {
 	case "bitwarden":
 		return BitwardenBackend{}
+	case "keyring":
+		return Keyring99Backend{}
 	default:
-		return KeychainBackend{}
+		return Keyring99Backend{}
 	}
 }
 
