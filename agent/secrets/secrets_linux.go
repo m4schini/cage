@@ -27,7 +27,7 @@ const attrService = "service"
 const attrAccount = "account"
 const serviceName = "cage-secrets"
 
-func store(label, apiKey string) error {
+func (KeychainBackend) Store(label, apiKey string) error {
 	srv, err := secretservice.NewService()
 	if err != nil {
 		return fmt.Errorf("opening SecretService: %w", err)
@@ -55,7 +55,7 @@ func store(label, apiKey string) error {
 	return nil
 }
 
-func retrieve(label string) (string, error) {
+func (KeychainBackend) Retrieve(label string) (string, error) {
 	srv, err := secretservice.NewService()
 	if err != nil {
 		return "", fmt.Errorf("opening SecretService: %w", err)
@@ -81,7 +81,7 @@ func retrieve(label string) (string, error) {
 	return string(secret), nil
 }
 
-func list() ([]string, error) {
+func (KeychainBackend) List() ([]string, error) {
 	srv, err := secretservice.NewService()
 	if err != nil {
 		return nil, fmt.Errorf("opening SecretService: %w", err)
@@ -112,7 +112,7 @@ func list() ([]string, error) {
 	return labels, nil
 }
 
-func del(label string) error {
+func (KeychainBackend) Delete(label string) error {
 	srv, err := secretservice.NewService()
 	if err != nil {
 		return fmt.Errorf("opening SecretService: %w", err)

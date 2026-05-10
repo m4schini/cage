@@ -1,21 +1,22 @@
-// Package secrets manages multiple named API keys in the
-// native secret store of the host operating system.
+// Package secrets manages multiple named API keys in a pluggable secret store.
 //
-// Supported platforms:
+// Backends are selected at runtime via the viper key "secrets.backend":
 //
-//	macOS  – Security.framework (Keychain)
-//	Linux  – D-Bus SecretService (gnome-keyring / ksecretservice)
-//
-// On every other platform the four functions return ErrNotSupported.
+//	keychain (default) – the OS-native store
+//	    macOS  – Security.framework (Keychain)
+//	    Linux  – D-Bus SecretService (gnome-keyring / ksecretservice)
+//	bitwarden          – the `bw` CLI, compatible with Bitwarden and Vaultwarden
 //
 // Keys are namespaced under the "cage:" prefix so that List() only surfaces
 // items written by this package even if other applications share the same
-// keychain service name.
+// service / vault.
 package secrets
 
 import (
 	"errors"
 	"fmt"
+
+	"github.com/spf13/viper"
 )
 
 // Sentinel errors.
@@ -30,8 +31,32 @@ var (
 	ErrNotSupported = errors.New("keychain is not supported on this platform")
 )
 
-// Store saves apiKey in the system keychain under label, replacing any
-// previously stored value.
+// Backend is a pluggable secret store. Implementations must namespace items
+// themselves so List() does not leak items written by other applications.
+type Backend interface {
+	Store(label, secret string) error
+	Retrieve(label string) (string, error)
+	List() ([]string, error)
+	Delete(label string) error
+}
+
+// KeychainBackend stores secrets in the OS-native keychain. Its methods are
+// defined per-platform in secrets_{linux,darwin,stub}.go via build tags.
+type KeychainBackend struct{}
+
+// currentBackend resolves the active backend from viper. The default is the
+// OS keychain, preserving prior behaviour for callers that have not opted in
+// to a different store.
+func currentBackend() Backend {
+	switch viper.GetString("secrets.backend") {
+	case "bitwarden":
+		return BitwardenBackend{}
+	default:
+		return KeychainBackend{}
+	}
+}
+
+// Store saves apiKey under label, replacing any previously stored value.
 //
 //	label  – a short identifier such as "work", "personal", or "ci-prod"
 //	apiKey – the raw "sk-ant-…" value
@@ -42,7 +67,7 @@ func Store(label, apiKey string) error {
 	if apiKey == "" {
 		return errors.New("apiKey must not be empty")
 	}
-	return store(label, apiKey)
+	return currentBackend().Store(label, apiKey)
 }
 
 // Retrieve returns the API key stored under label.
@@ -51,13 +76,13 @@ func Retrieve(label string) (string, error) {
 	if err := validateLabel(label); err != nil {
 		return "", err
 	}
-	return retrieve(label)
+	return currentBackend().Retrieve(label)
 }
 
 // List returns the labels of all stored keys (never the key values).
 // The slice is empty (not nil) when no keys have been stored yet.
 func List() ([]string, error) {
-	labels, err := list()
+	labels, err := currentBackend().List()
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +98,7 @@ func Delete(label string) error {
 	if err := validateLabel(label); err != nil {
 		return err
 	}
-	return del(label)
+	return currentBackend().Delete(label)
 }
 
 func validateLabel(label string) error {

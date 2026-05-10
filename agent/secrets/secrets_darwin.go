@@ -22,10 +22,10 @@ const (
 	accountPrefix = "cage:"
 )
 
-func store(label, apiKey string) error {
+func (k KeychainBackend) Store(label, apiKey string) error {
 	// Delete any pre-existing item so we can do a clean add (no upsert in
 	// the Security framework).
-	if err := del(label); err != nil && !errors.Is(err, ErrNotFound) {
+	if err := k.Delete(label); err != nil && !errors.Is(err, ErrNotFound) {
 		return fmt.Errorf("replacing existing key: %w", err)
 	}
 
@@ -45,7 +45,7 @@ func store(label, apiKey string) error {
 	return nil
 }
 
-func retrieve(label string) (string, error) {
+func (KeychainBackend) Retrieve(label string) (string, error) {
 	query := keychain.NewItem()
 	query.SetSecClass(keychain.SecClassGenericPassword)
 	query.SetService(service)
@@ -66,7 +66,7 @@ func retrieve(label string) (string, error) {
 	return string(results[0].Data), nil
 }
 
-func list() ([]string, error) {
+func (KeychainBackend) List() ([]string, error) {
 	query := keychain.NewItem()
 	query.SetSecClass(keychain.SecClassGenericPassword)
 	query.SetService(service)
@@ -90,7 +90,7 @@ func list() ([]string, error) {
 	return labels, nil
 }
 
-func del(label string) error {
+func (KeychainBackend) Delete(label string) error {
 	item := keychain.NewItem()
 	item.SetSecClass(keychain.SecClassGenericPassword)
 	item.SetService(service)

@@ -5,6 +5,7 @@ import (
 	"cage/container/runtime"
 	"fmt"
 
+	"github.com/99designs/keyring"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -21,6 +22,8 @@ var statusCmd = &cobra.Command{
 		}
 		fmt.Println("Using config:", viper.ConfigFileUsed())
 		fmt.Println()
+
+		fmt.Println("Secret Backends:", keyring.AvailableBackends())
 
 		fmt.Println("Runtimes:")
 		runtimes := runtime.Available(ctx)
