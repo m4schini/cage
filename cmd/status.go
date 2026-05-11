@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"cage/cage/state"
 	"cage/container/runtime"
 	"fmt"
 
@@ -12,14 +11,11 @@ import (
 
 // statusCmd represents the status command
 var statusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Status summary",
+	Use:    "status",
+	Short:  "Status summary",
+	PreRun: InitCageApp,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := cmd.Context()
-		if !state.IsInitialized() {
-			fmt.Println("cage is not initialized")
-			return
-		}
 		fmt.Println("Using config:", viper.ConfigFileUsed())
 		fmt.Println()
 

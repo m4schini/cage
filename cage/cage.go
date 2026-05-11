@@ -1,27 +1,30 @@
 package cage
 
 import (
+	"cage/cage/config"
 	"cage/cage/containerfile"
+	"cage/cage/state"
 	ctr "cage/container"
 	"cage/nix"
 	"context"
+	"fmt"
 
 	"github.com/docker/docker/client"
-	"github.com/spf13/viper"
 )
 
 func Run(ctx context.Context, cli *client.Client) error {
-	cfg, modTime, err := LoadConfig()
+	cfg, modTime, err := state.Load()
 	if err != nil {
 		return err
 	}
-	imageName := "localhost/cage:" + cfg.Name
+
+	imageName := fmt.Sprintf("localhost/%v:%v", config.AppName, cfg.Name)
 	packages := cfg.Packages
 	packages = append(packages, "claude-code")
 
 	imageCreatedTime, err := ctr.ImageCreatedAt(ctx, cli, imageName)
 	if err != nil || modTime.After(imageCreatedTime) {
-		err = ctr.BuildImage(ctx, cli, viper.GetBool("verbose"), containerfile.Containerfile, []string{imageName}, nix.ShellNixPackages{
+		err = ctr.BuildImage(ctx, cli, true, containerfile.Containerfile, []string{imageName}, nix.ShellNixPackages{
 			Packages: packages,
 			Shell:    "bash",
 		})

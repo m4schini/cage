@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -12,6 +14,17 @@ import (
 	"github.com/docker/docker/client"
 	xterm "golang.org/x/term"
 )
+
+func resizeContainer(ctx context.Context, cli *client.Client, id string) {
+	cols, rows, err := xterm.GetSize(int(os.Stdin.Fd()))
+	if err != nil {
+		return
+	}
+	_ = cli.ContainerResize(ctx, id, container.ResizeOptions{
+		Width:  uint(cols),
+		Height: uint(rows),
+	})
+}
 
 func RunImage(ctx context.Context, cli *client.Client, image string, env []string) error {
 	cwd, err := os.Getwd()
@@ -52,12 +65,24 @@ func RunImage(ctx context.Context, cli *client.Client, image string, env []strin
 		return err
 	}
 
-	if cols, rows, err := xterm.GetSize(int(os.Stdin.Fd())); err == nil {
-		_ = cli.ContainerResize(ctx, r.ID, container.ResizeOptions{
-			Width:  uint(cols),
-			Height: uint(rows),
-		})
-	}
+	resizeContainer(ctx, cli, r.ID)
+
+	winch := make(chan os.Signal, 1)
+	signal.Notify(winch, syscall.SIGWINCH)
+	defer signal.Stop(winch)
+
+	resizeCtx, cancelResize := context.WithCancel(ctx)
+	defer cancelResize()
+	go func() {
+		for {
+			select {
+			case <-resizeCtx.Done():
+				return
+			case <-winch:
+				resizeContainer(resizeCtx, cli, r.ID)
+			}
+		}
+	}()
 
 	attachResp, err := cli.ContainerAttach(ctx, r.ID, container.AttachOptions{
 		Stream: true,

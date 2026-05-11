@@ -14,15 +14,17 @@ type EnvVar struct {
 }
 
 type CageConfig struct {
-	Name     string   `yaml:"name"`
-	Packages []string `yaml:"packages"`
-	Agent    struct {
-		AuthTokenSecretLabel string `yaml:"authTokenSecretLabel"`
-		BaseURL              string `yaml:"baseURL"`
-		Model                string `yaml:"model"`
-		HaikuModel           string `yaml:"haikuModel"`
-	} `yaml:"agent"`
-	Env []EnvVar `yaml:"env"`
+	Name     string          `yaml:"name"`
+	Packages []string        `yaml:"packages"`
+	Agent    CageAgentConfig `yaml:"agent"`
+	Env      []EnvVar        `yaml:"env"`
+}
+
+type CageAgentConfig struct {
+	AuthTokenSecretLabel string `yaml:"authTokenSecretLabel"`
+	BaseURL              string `yaml:"baseURL"`
+	Model                string `yaml:"model"`
+	HaikuModel           string `yaml:"haikuModel"`
 }
 
 func (c CageConfig) ImageName() string {

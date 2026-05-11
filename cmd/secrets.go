@@ -89,6 +89,7 @@ var secretsDeleteCmd = &cobra.Command{
 	Aliases: []string{"rm"},
 	Short:   "delete secret",
 	Args:    cobra.ExactArgs(1),
+	PreRun:  InitCageApp,
 	Run: func(cmd *cobra.Command, args []string) {
 		cobra.CheckErr(secrets.Delete(args[0]))
 	},

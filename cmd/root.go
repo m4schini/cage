@@ -22,15 +22,15 @@ var cfgFile string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:    config2.AppName,
-	Short:  `isolate "ai" "agents"`,
-	PreRun: RequireInitialized,
+	Use:              config2.AppName,
+	Short:            `isolate "ai" "agents"`,
+	PersistentPreRun: InitCageApp,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, os.Kill)
 		defer cancel()
 
 		if dryrun, err := cmd.Flags().GetBool("dry-run"); err == nil && dryrun {
-			cfg, lastModified, err := cage.LoadConfig()
+			cfg, lastModified, err := state.Load()
 			cobra.CheckErr(err)
 
 			fmt.Println("Image:", cfg.ImageName())
@@ -67,10 +67,8 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func RequireInitialized(cmd *cobra.Command, args []string) {
-	if !state.IsInitialized() {
-		cobra.CheckErr(fmt.Errorf("cage is not initialized: run `%v init` first", config2.AppName))
-	}
+func InitCageApp(cmd *cobra.Command, args []string) {
+
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
