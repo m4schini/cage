@@ -11,6 +11,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/client"
 	xterm "golang.org/x/term"
 )
@@ -38,6 +39,8 @@ func RunImage(ctx context.Context, cli *client.Client, image string, env []strin
 	}
 	env = append(env, "TERM="+term)
 
+	pidsLimit := int64(512)
+
 	r, err := cli.ContainerCreate(ctx, &container.Config{
 		Image:        image,
 		Env:          env,
@@ -54,6 +57,32 @@ func RunImage(ctx context.Context, cli *client.Client, image string, env []strin
 				Source: cwd,
 				Target: "/workspace",
 			},
+		},
+		Privileged:     false,
+		ReadonlyRootfs: false,
+		SecurityOpt: []string{
+			"no-new-privileges:true",
+		},
+		CapDrop: strslice.StrSlice{"ALL"},
+		CapAdd: strslice.StrSlice{
+			"CHOWN",
+			"DAC_OVERRIDE",
+			"FOWNER",
+			"FSETID",
+			"SETGID",
+			"SETUID",
+			"KILL",
+		},
+		IpcMode:      container.IPCModePrivate,
+		PidMode:      "",
+		UTSMode:      "",
+		UsernsMode:   "",
+		CgroupnsMode: container.CgroupnsModePrivate,
+		Sysctls: map[string]string{
+			"net.ipv4.ping_group_range": "0 0",
+		},
+		Resources: container.Resources{
+			PidsLimit: &pidsLimit,
 		},
 	}, nil, nil, "")
 	if err != nil {

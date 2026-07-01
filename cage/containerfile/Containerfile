@@ -22,4 +22,4 @@ RUN . /home/cage/.nix-profile/etc/profile.d/nix.sh && nix-shell /shell.nix --run
 
 WORKDIR /workspace
 
-ENTRYPOINT ["/bin/sh", "-c", ". /home/cage/.nix-profile/etc/profile.d/nix.sh && nix-shell /shell.nix --command \"claude --dangerously-skip-permission\""]
+ENTRYPOINT ["/bin/sh", "-c", ". /home/cage/.nix-profile/etc/profile.d/nix.sh && nix-shell /shell.nix --command \"claude\""]
